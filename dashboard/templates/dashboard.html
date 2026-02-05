@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Telegram Drive</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        h2 {
+            color: #333;
+        }
+        
+        ul {
+            list-style: none;
+            padding: 0;
+            margin: 20px 0;
+        }
+        
+        ul li {
+            display: inline-block;
+            margin-right: 15px;
+        }
+        
+        ul li a {
+            text-decoration: none;
+            color: #007bff;
+            font-weight: bold;
+        }
+        
+        ul li a:hover {
+            text-decoration: underline;
+        }
+        
+        .files-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .file-card {
+            border: 1px solid #ccc;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+            width: 200px;
+        }
+        
+        .file-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        
+        .file-icon {
+            width: 150px;
+            height: 150px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            font-size: 48px;
+            margin: 0 auto;
+        }
+        
+        .file-preview-img {
+            max-width: 150px;
+            max-height: 150px;
+            object-fit: cover;
+            border-radius: 4px;
+        }
+        
+        .file-name {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #333;
+            word-break: break-word;
+        }
+        
+        .file-mime {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .view-content-btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.3s;
+            margin-top: 10px;
+        }
+        
+        .view-content-btn:hover {
+            background-color: #0056b3;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <h2>Welcome to Telegram Drive</h2>
+
+    <ul>
+        <li><a href="/">📂 My Files</a></li>
+        <li><a href="/upload/">⬆ Upload File</a></li>
+        <li><a href="/logout/">🚪 Logout</a></li>
+    </ul>
+
+    <h3>My Files</h3>
+    
+    {% if files %}
+    <div class="files-container">
+        {% for file in files %}
+        <div class="file-card">
+            {% if file.name %}
+                {% if file.mime_type and "image/" in file.mime_type %}
+                    <!-- Image Preview -->
+                    <img src="/preview/{{ file.id }}/" alt="{{ file.name }}" class="file-preview-img">
+                    
+                {% elif file.is_text or file.is_document %}
+                    <!-- Text/Document File with View Content Button -->
+                    <div class="file-icon">
+                        📄
+                    </div>
+                    <button onclick="window.location.href='/content/{{ file.id }}/'" class="view-content-btn">
+                        View Content
+                    </button>
+                    
+                {% else %}
+                    <!-- Other Files (no preview) -->
+                    <div class="file-icon">
+                        📄
+                    </div>
+                {% endif %}
+                
+                <div class="file-name">
+                    <strong>{{ file.name }}</strong>
+                </div>
+                <div class="file-mime">
+                    MIME: {{ file.mime_type|default:"unknown" }}
+                </div>
+                <div class="file-mime">
+                    Size: {{ file.size|filesizeformat }}
+                </div>
+                
+            {% else %}
+                <!-- Unknown File -->
+                <div class="file-icon">
+                    ❓
+                </div>
+                <div class="file-name">
+                    <small>Unknown file</small>
+                </div>
+            {% endif %}
+           <button
+    onclick="window.location.href='/download/{{ file.id }}/'"
+    class="view-content-btn"
+    style="background-color:#28a745;"
+>
+    ⬇ Download
+</button>
+
+
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="no-files">
+        <p>📭 No files uploaded yet.</p>
+        <p><a href="/upload/">Upload your first file</a></p>
+    </div>
+    {% endif %}
+</body>
+</html>
