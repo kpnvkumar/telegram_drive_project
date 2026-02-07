@@ -1,25 +1,18 @@
 # accounts/otp.py
-import os, struct, base64, random, pyotp
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives import padding
-from cryptography.hazmat.backends import default_backend
+import pyotp
 
-def encrypt_random_integer():
-    key = os.urandom(32)
-    iv = os.urandom(16)
-    r = random.randint(0, 10000000)
-
-    padder = padding.PKCS7(algorithms.AES.block_size).padder()
-    padded = padder.update(struct.pack(">I", r)) + padder.finalize()
-
-    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
-    encryptor = cipher.encryptor()
-    encrypted = encryptor.update(padded) + encryptor.finalize()
-
-    return key, iv, base64.b32encode(encrypted).decode(), r
+def generate_otp_secret():
+    """Generates a new random base32 secret for TOTP."""
+    return pyotp.random_base32()
 
 def generate_otp(secret):
+    """Generates a TOTP code for the given secret."""
     return pyotp.TOTP(secret).now()
 
 def verify_otp(secret, user_input):
-    return pyotp.TOTP(secret).verify(user_input, valid_window=5)
+    """
+    Verifies a user-submitted OTP.
+    A valid_window of 1 allows for a 30-second tolerance on either side,
+    which is usually sufficient to account for clock drift.
+    """
+    return pyotp.TOTP(secret).verify(user_input, valid_window=1)

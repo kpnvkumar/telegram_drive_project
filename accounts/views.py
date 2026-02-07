@@ -1,20 +1,23 @@
-from urllib import request
 from django.shortcuts import render, redirect
-from django.http import HttpResponse, Http404
+from django.http import HttpResponse
 from .decorators import login_required
 from .db import users_collection
 from .utils import hash_password, verify_password
 from .otp_service import send_login_otp, validate_otp
-from .telegram_service import get_channel_id, get_file_data
+from .telegram_service import get_channel_id
+
 
 def signup_view(request):
     if request.method == "POST":
-        email = request.POST["email"].lower()
-        password = request.POST["password"]
+        email = request.POST.get("email", "").lower()
+        password = request.POST.get("password", "")
+        password2 = request.POST.get("password2", "")
 
         # Check if user exists
         if users_collection.find_one({"email": email}):
             return render(request, "signup.html", {"error": "Email already registered"})
+        if password != password2:
+            return render(request, "signup.html", {"error": "Passwords do not match"})
 
         users_collection.insert_one({
             "email": email,
@@ -30,8 +33,8 @@ def signup_view(request):
 def login_view(request):
     """Login with email & password, send OTP."""
     if request.method == "POST":
-        email = request.POST["email"].lower()
-        password = request.POST["password"]
+        email = request.POST.get("email", "").lower()
+        password = request.POST.get("password", "")
 
         user = users_collection.find_one({"email": email})
 
@@ -47,7 +50,7 @@ def login_view(request):
 
 def otp_view(request):
     if request.method == "POST":
-        otp = request.POST["otp"]
+        otp = request.POST.get("otp", "")
 
         if validate_otp(request, otp):
             email = request.session["otp_email"]
@@ -64,6 +67,8 @@ def otp_view(request):
 
             request.session["authenticated"] = True
             request.session["user_email"] = email
+            del request.session["otp_secret"]
+            del request.session["otp_email"]
             request.session.set_expiry(3600)  # 1 hour
 
             return redirect("dashboard")
@@ -73,21 +78,16 @@ def otp_view(request):
     return render(request, "otp.html")
 
 
-@login_required
-def download_view(request, message_id):
-    email = request.session.get("user_email")
-    user = users_collection.find_one({"email": email})
-
-    if not user or "channel_id" not in user:
+def resend_otp_view(request):
+    """Resends the OTP code to the user's email."""
+    email = request.session.get("otp_email")
+    if not email:
+        # If for some reason the email is not in the session,
+        # redirect to the login page.
         return redirect("login")
 
-    file_data = get_file_data(user["channel_id"], message_id)
-    if not file_data:
-        raise Http404("File not found")
-
-    response = HttpResponse(file_data['data'], content_type=file_data['mime_type'])
-    response['Content-Disposition'] = f'attachment; filename="{file_data["name"]}"'
-    return response
+    send_login_otp(request, email)
+    return redirect("otp")
 
 
 @login_required

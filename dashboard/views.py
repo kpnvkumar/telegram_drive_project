@@ -1,139 +1,107 @@
-#from django.shortcuts import render
-#from accounts.decorators import login_required
 import os
 import tempfile
-import io
-from django.http import HttpResponse
+
+from django.http import HttpResponse, FileResponse, Http404, JsonResponse
 from django.shortcuts import render, redirect
+
 from accounts.decorators import login_required
 from accounts.db import users_collection
-from accounts.telegram_service import upload_file, get_channel_id, list_files, get_file_preview,download_file
-from telethon.tl.types import InputPeerChannel
-import os
-import tempfile
-from django.http import FileResponse, Http404
-from django.conf import settings
-
+from accounts.telegram_service import (upload_file, get_channel_id, list_files,
+                                     get_file_preview, download_file)
 
 @login_required
 def dashboard_view(request):
-    email = request.session["user_email"]
-
+    email = request.session.get("user_email")
     user = users_collection.find_one({"email": email})
-    channel_data = user.get("channel_id")
 
-    channel_id = None
-    files = []
-    if channel_data and isinstance(channel_data, dict):
-        channel_id = channel_data['id']
-        files = list_files(channel_id)
-    elif isinstance(channel_data, int):
-        channel_id = channel_data
-        files = list_files(channel_id)
+    if not user or "channel_id" not in user:
+        return redirect("login")
 
-    return render(request, "dashboard.html", {
-        "channel_id": channel_id,
-        "files": files
-    })
+    files = list_files(user["channel_id"])
+    return render(request, "dashboard.html", {"files": files, "user_email": email})
+
 @login_required
 def upload_view(request):
     if request.method == "POST":
-        email = request.session["user_email"]
+        email = request.session.get("user_email")
         user = users_collection.find_one({"email": email})
 
-        channel_data = user.get("channel_id")
-        if not channel_data or not isinstance(channel_data, dict):
-            channel_data = get_channel_id(email)
-            users_collection.update_one(
-                {"email": email},
-                {"$set": {"channel_id": channel_data}},
-                upsert=True
-            )
+        if not user or "channel_id" not in user:
+            return JsonResponse({"error": "User or channel not found."}, status=400)
 
-        peer = InputPeerChannel(channel_data['id'], channel_data['access_hash'])
+        uploaded_file = request.FILES.get("file")
+        if not uploaded_file:
+            return JsonResponse({"error": "No file provided."}, status=400)
 
-        uploaded_file = request.FILES["file"]
         file_name = uploaded_file.name
-        uploaded_file.seek(0)
 
-        upload_file(peer, uploaded_file, file_name)
+        try:
+            upload_file(user["channel_id"], uploaded_file, file_name)
+            return redirect("dashboard")
+        except Exception as e:
+            # It's good practice to log the exception here
+            print(f"Error uploading file: {e}")
+            return JsonResponse({"error": f"Error uploading file: {e}"}, status=500)
 
-        return redirect("dashboard")
-    else:
-        return render(request, "upload.html")
-
-
-@login_required
-def file_preview(request, message_id):
-    email = request.session["user_email"]
-    user = users_collection.find_one({"email": email})
-    channel_data = user.get("channel_id")
-
-    if not channel_data:
-        return HttpResponse("Channel not found", status=404)
-
-    channel_id = channel_data['id'] if isinstance(channel_data, dict) else channel_data
-    preview = get_file_preview(channel_id, int(message_id))
-
-    if preview and preview['type'] == 'image':
-        return HttpResponse(preview['data'], content_type=preview['mime_type'])
-    else:
-        return HttpResponse("Preview not available", status=404)
+    return redirect("dashboard")
 
 
 @login_required
-def file_content(request, message_id):
-    email = request.session["user_email"]
-    user = users_collection.find_one({"email": email})
-    channel_data = user.get("channel_id")
-
-    if not channel_data:
-        return HttpResponse("Channel not found", status=404)
-
-    channel_id = channel_data['id'] if isinstance(channel_data, dict) else channel_data
-    preview = get_file_preview(channel_id, int(message_id))
-
-    if preview and preview['type'] == 'text':
-        return render(request, "file_content.html", {
-            'file_name': preview['name'],
-            'content': preview['content'],
-            'message_id': message_id
-        })
-    else:
-        return HttpResponse("File content not available for viewing", status=404)
-@login_required
-def download(request, message_id):
+def download_view(request, message_id):
     email = request.session.get("user_email")
     if not email:
         return redirect("login")
 
     user = users_collection.find_one({"email": email})
     channel_data = user.get("channel_id")
-    print("SESSION:", dict(request.session))
     if not channel_data:
         raise Http404("Channel not found")
 
     channel_id = channel_data["id"] if isinstance(channel_data, dict) else channel_data
 
     temp_dir = tempfile.mkdtemp()
-    temp_path = os.path.join(temp_dir, f"file_{message_id}")
+    temp_path = os.path.join(temp_dir, f"download_{message_id}")
 
-    download_file(
+    file_name = download_file(
         channel_id=channel_id,
-        message_id=message_id,
+        message_id=int(message_id),
         path=temp_path
     )
 
-    if not os.path.exists(temp_path):
+    if not file_name or not os.path.exists(temp_path):
         raise Http404("Download failed")
 
     return FileResponse(
         open(temp_path, "rb"),
         as_attachment=True,
-        filename=f"file_{message_id}"
+        filename=file_name
     )
 
 
-from accounts.telegram_service import upload_file
+@login_required
+def preview_view(request, message_id):
+    email = request.session.get("user_email")
+    user = users_collection.find_one({"email": email})
 
+    if not user or "channel_id" not in user:
+        return redirect("login")
 
+    preview_data = get_file_preview(user["channel_id"], message_id)
+
+    if not preview_data:
+        raise Http404("File not found or preview not available.")
+
+    if preview_data['type'] == 'image':
+        response = HttpResponse(preview_data['data'], content_type=preview_data['mime_type'])
+        response['Content-Disposition'] = f'inline; filename="{preview_data["name"]}"'
+        return response
+
+    if preview_data['type'] == 'text':
+        # For security, explicitly set content type for text previews
+        # to avoid browser rendering HTML/JS.
+        if 'content' in preview_data:
+            return HttpResponse(preview_data['content'], content_type='text/plain; charset=utf-8')
+        return render(request, "preview_text.html", {"preview": preview_data})
+
+    # For 'file' type and others, show a page with file info and a download link
+    return render(request, "preview_file.html", {"preview": preview_data})

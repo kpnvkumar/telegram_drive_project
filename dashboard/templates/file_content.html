@@ -79,6 +79,22 @@
         .back-link:hover {
             text-decoration: underline;
         }
+
+        /* Responsive styles */
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 15px;
+            }
+            .actions {
+                width: 100%;
+                justify-content: flex-start;
+            }
+            .container {
+                padding: 15px;
+            }
+        }
     </style>
 </head>
 <body>
